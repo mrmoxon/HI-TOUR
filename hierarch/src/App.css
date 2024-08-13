@@ -1,0 +1,55 @@
+.app {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  transition: flex 0.3s ease;
+  background-color: #f0f0f0;
+  border-right: 1px solid #ccc;
+}
+
+.panel:last-child {
+  border-right: none;
+}
+
+.panel.collapsed {
+  flex: 0 0 40px;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background-color: #e0e0e0;
+  cursor: pointer;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.panel.collapsed .panel-header h2 {
+  display: none;
+}
+
+.panel-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.panel.collapsed .panel-icon {
+  font-size: 18px;
+}
+
+.collapsed .panel-content {
+  display: none;
+}
