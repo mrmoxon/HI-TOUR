@@ -1,148 +1,205 @@
-// App.tsx
-import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import React, { useState, useCallback, useEffect } from 'react';
 import './App.css';
-import ChatInterface from './ChatInterface.tsx';
+import { SnippetProvider } from './SnippetContext.tsx';
+import { SnippetManagerProvider } from './SnippetManager.tsx';
 import ArtifactsPanel from './ArtifactsPanel.tsx';
 import AgentTabs from './AgentTabs.tsx';
 
 interface PanelProps {
   title: string;
   children: React.ReactNode;
-  fontSize: number;
+  isCollapsed: boolean;
+  onCollapse: () => void;
+  width: string;
 }
 
-interface CodeSnippet {
-    id: number;
-    code: string;
-    language: string;
+interface Snippet {
+  id: number;
+  content: string;
+  type: 'markdown' | 'code';
+  language?: string;
 }
-  
-const Panel: React.FC<PanelProps> = ({ title, children }) => {
-    const [isCollapsed, setIsCollapsed] = useState(false);
-  
-    return (
-      <div className={`panel ${isCollapsed ? 'collapsed' : ''}`}>
-        <div className="panel-header" onClick={() => setIsCollapsed(!isCollapsed)}>
-          <h2>{title}</h2>
-          <span className="panel-icon">{isCollapsed ? '▶' : '◀'}</span>
-        </div>
-        <div className="panel-content">
-          {children}
-        </div>
+
+const Panel: React.FC<PanelProps> = ({ title, children, isCollapsed, onCollapse, width }) => {
+  return (
+    <div className={`panel ${isCollapsed ? 'collapsed' : ''}`} style={{ width, minWidth: isCollapsed ? '40px' : width, maxWidth: width }}>
+      <div className="panel-header" onClick={onCollapse}>
+        <h2>{title}</h2>
+        <span className="panel-icon">{isCollapsed ? '▶' : '◀'}</span>
       </div>
-    );
+      <div className="panel-content">
+        {children}
+      </div>
+    </div>
+  );
 };
-  
+
 const App: React.FC = () => {
-    const schemes = ['sandy-pastel', 'ivy-green', 'ocean-blue', 'sunset-orange', 'lavender-dream'];
-    const [backendMessage, setBackendMessage] = useState('');
-    const [schemeIndex, setSchemeIndex] = useState(0);
-    const [fontSize, setFontSize] = useState(16);
-    const [codeSnippets, setCodeSnippets] = useState<CodeSnippet[]>([]);
-    const [activeSnippetId, setActiveSnippetId] = useState<number | null>(null);
-    const [deletedSnippets, setDeletedSnippets] = useState<number[]>([]);
+  const schemes = ['sandy-pastel', 'ivy-green', 'ocean-blue', 'sunset-orange', 'lavender-dream'];
+  const [schemeIndex, setSchemeIndex] = useState(0);
+  const [fontSize, setFontSize] = useState(16);
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
+  const [activeSnippetId, setActiveSnippetId] = useState<number | null>(null);
+  const [deletedSnippets, setDeletedSnippets] = useState<number[]>([]);
+  const [panelMode, setPanelMode] = useState<'1-panel' | '2-panel' | '3-panel'>('3-panel');
+  const [collapsedPanels, setCollapsedPanels] = useState({
+    gantt: false,
+    interface: false,
+    artifacts: false,
+  });
 
-    const cycleColorScheme = () => {
-        setSchemeIndex((prevIndex) => (prevIndex + 1) % schemes.length);
+  const cycleColorScheme = () => {
+    setSchemeIndex((prevIndex) => (prevIndex + 1) % schemes.length);
+  };
+
+  const togglePanelMode = () => {
+    setPanelMode(prevMode => {
+      if (prevMode === '3-panel') return '2-panel';
+      if (prevMode === '2-panel') return '1-panel';
+      return '3-panel';
+    });
+  };
+
+  const adjustFontSize = (increment: number) => {
+    setFontSize(prevSize => Math.min(Math.max(prevSize + increment, 12), 24));
+  };
+
+  const detectLanguage = (code: string): string => {
+    if (code.includes('class') || code.includes('interface')) return 'typescript';
+    if (code.includes('func') || code.includes('let')) return 'swift';
+    if (code.includes('def') || code.includes('print(')) return 'python';
+    if (code.includes('package') || code.includes('public class')) return 'java';
+    return 'javascript'; // Default to JavaScript
+  };
+
+  const handleCodeDetected = useCallback((code: string) => {
+    const newSnippet: Snippet = {
+        id: Date.now(),
+        content: code,
+        type: 'code',
+        language: detectLanguage(code),
+        name: `Code ${snippets.length + 1}`
     };
+    setSnippets(prev => [...prev, newSnippet]);
+    return newSnippet.id;
+}, [snippets.length]);
 
-    const adjustFontSize = (increment: number) => {
-        setFontSize(prevSize => Math.min(Math.max(prevSize + increment, 12), 24));
-    };
+  const updateSnippet = useCallback((id: number, newContent: string, type: 'markdown' | 'code', language?: string) => {
+    setSnippets(prev => {
+      const existingIndex = prev.findIndex(snippet => snippet.id === id);
+      if (existingIndex >= 0) {
+        return prev.map(snippet =>
+          snippet.id === id ? { ...snippet, content: newContent, type, language } : snippet
+        );
+      } else {
+        return [...prev, { id, content: newContent, type, language }];
+      }
+    });
+  }, []);
+    
+  const deleteSnippet = useCallback((id: number) => {
+    setSnippets(prev => prev.filter(snippet => snippet.id !== id));
+    setDeletedSnippets(prev => [...prev, id]);
+    if (activeSnippetId === id) {
+      setActiveSnippetId(null);
+    }
+  }, [activeSnippetId]);
 
-    const detectLanguage = (code: string): string => {
-        if (code.includes('class') || code.includes('interface')) return 'typescript';
-        if (code.includes('func') || code.includes('let')) return 'swift';
-        if (code.includes('def') || code.includes('print(')) return 'python';
-        if (code.includes('package') || code.includes('public class')) return 'java';
-        return 'javascript'; // Default to JavaScript
-    };  
+  const handleSnippetButtonClick = useCallback((snippetId: number) => {
+    setActiveSnippetId(snippetId);
+  }, []);
 
-    const handleCodeDetected = useCallback((code: string) => {
-        const language = detectLanguage(code);
-        const newSnippet = { id: Date.now(), code, language };
-        setCodeSnippets(prev => [...prev, newSnippet]);
-        return newSnippet.id;
-    }, []);
+  const getVisiblePanelsCount = () => {
+    return Object.values(collapsedPanels).filter(isCollapsed => !isCollapsed).length;
+  };
 
-    const updateCodeSnippet = useCallback((id: number, newCode: string) => {
-        setCodeSnippets(prev => prev.map(snippet => 
-            snippet.id === id ? { ...snippet, code: newCode } : snippet
-        ));
-    }, []);
+  const getPanelWidth = (panelName: keyof typeof collapsedPanels) => {
+    const visiblePanelsCount = getVisiblePanelsCount();
+    const isCollapsed = collapsedPanels[panelName];
+    
+    if (isCollapsed) {
+      return '40px';
+    }
 
-    const deleteCodeSnippet = useCallback((id: number) => {
-        setCodeSnippets(prev => prev.filter(snippet => snippet.id !== id));
-        setDeletedSnippets(prev => [...prev, id]);
-        if (activeSnippetId === id) {
-            setActiveSnippetId(null);
-        }
-    }, [activeSnippetId]);
+    const availableWidth = `calc(100vw - 60px - ${40 * (3 - visiblePanelsCount)}px)`;
 
-    const handleSnippetButtonClick = useCallback((snippetId: number) => {
-        setActiveSnippetId(snippetId);
-    }, []);
+    switch (visiblePanelsCount) {
+      case 1:
+        return availableWidth;
+      case 2:
+        return `calc(${availableWidth} / 2)`;
+      case 3:
+        return `calc(${availableWidth} / 3)`;
+      default:
+        return '0px';
+    }
+  };
 
-    useEffect(() => {
-        axios.get('http://localhost:5000/api/hello')
-            .then(response => {
-                setBackendMessage(response.data.message);
-            })
-            .catch(error => {
-                console.error('Error fetching data: ', error);
-                setBackendMessage('Error connecting to backend');
-            });
-    }, []);
+  const togglePanelCollapse = (panelName: keyof typeof collapsedPanels) => {
+    setCollapsedPanels(prev => ({
+      ...prev,
+      [panelName]: !prev[panelName]
+    }));
+  };
 
-    return (
+  useEffect(() => {
+    const visiblePanelsCount = getVisiblePanelsCount();
+    if (visiblePanelsCount === 1) {
+      setPanelMode('1-panel');
+    } else if (visiblePanelsCount === 2) {
+      setPanelMode('2-panel');
+    } else {
+      setPanelMode('3-panel');
+    }
+  }, [collapsedPanels]);
+
+  return (
+    <SnippetProvider>
+
+        <SnippetManagerProvider>
         <div className={`app ${schemes[schemeIndex]} dark`} style={{ fontSize: `${fontSize}px` }}>
-            <div className="sidebar">
-                <button onClick={cycleColorScheme} className="scheme-toggle">
-                    Switch Theme
-                </button>
-                <button
-                    onClick={() => adjustFontSize(2)}
-                    className="zoom-button zoom-button-top"
-                >
-                    +
-                </button>
-                <button
-                    onClick={() => adjustFontSize(-2)}
-                    className="zoom-button zoom-button-bottom"
-                >
-                    -
-                </button>
-            </div>
-            <div className="main-content">
-                <Panel title="Gantt" fontSize={fontSize}>
-                    <AgentTabs 
-                        onCodeDetected={handleCodeDetected}
-                        onSnippetButtonClick={handleSnippetButtonClick}
-                        onSnippetDelete={deleteCodeSnippet}
-                        deletedSnippets={deletedSnippets}
-                    />
-                </Panel>
-                <Panel title="Interface" fontSize={fontSize}>
-                    <AgentTabs 
-                        onCodeDetected={handleCodeDetected}
-                        onSnippetButtonClick={handleSnippetButtonClick}
-                        onSnippetDelete={deleteCodeSnippet}
-                        deletedSnippets={deletedSnippets}
-                    />
-                </Panel>
-                <Panel title="Artifacts" fontSize={fontSize}>
-                    <ArtifactsPanel 
-                        codeSnippets={codeSnippets} 
-                        updateCodeSnippet={updateCodeSnippet}
-                        deleteCodeSnippet={deleteCodeSnippet}
-                        fontSize={fontSize}
-                        activeSnippetId={activeSnippetId}
-                    />
-                </Panel>
+        <div className="sidebar">
+            <button onClick={cycleColorScheme} className="scheme-toggle">
+            Switch Theme
+            </button>
+            <button onClick={() => adjustFontSize(2)} className="zoom-button zoom-button-top">
+            +
+            </button>
+            <button onClick={() => adjustFontSize(-2)} className="zoom-button zoom-button-bottom">
+            -
+            </button>
+        </div>
+        <div className="main-content" style={{ display: 'flex', overflow: 'hidden' }}>
+            <Panel 
+                title="Gantt" 
+                isCollapsed={collapsedPanels.gantt}
+                onCollapse={() => togglePanelCollapse('gantt')}
+                width={getPanelWidth('gantt')}
+            >
+                <AgentTabs />
+            </Panel>
+            <Panel 
+                title="Interface" 
+                isCollapsed={collapsedPanels.interface}
+                onCollapse={() => togglePanelCollapse('interface')}
+                width={getPanelWidth('interface')}
+            >
+                <AgentTabs />
+            </Panel>
+            <Panel 
+                title="Artifacts" 
+                isCollapsed={collapsedPanels.artifacts}
+                onCollapse={() => togglePanelCollapse('artifacts')}
+                width={getPanelWidth('artifacts')}
+            >
+                <ArtifactsPanel fontSize={fontSize} />
+            </Panel>
             </div>
         </div>
-    );
+        </SnippetManagerProvider>
+    
+    </SnippetProvider>
+  );
 };
 
 export default App;
